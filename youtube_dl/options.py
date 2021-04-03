@@ -4,6 +4,7 @@ import os.path
 import optparse
 import re
 import sys
+import logging
 
 from .downloader.external import list_external_downloaders
 from .compat import (
@@ -909,6 +910,7 @@ def parseOpts(overrideArguments=None):
 
         argv = system_conf + user_conf + custom_conf + command_line_conf
         opts, args = parser.parse_args(argv)
+        format = '%(asctime)s %(pathname)s[line:%(lineno)d] %(levelname)s %(message)s'
         if opts.verbose:
             for conf_label, conf in (
                     ('System config', system_conf),
@@ -916,5 +918,8 @@ def parseOpts(overrideArguments=None):
                     ('Custom config', custom_conf),
                     ('Command-line args', command_line_conf)):
                 write_string('[debug] %s: %s\n' % (conf_label, repr(_hide_login_info(conf))))
-
+            # TODO The idea of logging MAY conflict with the idea of progress bar in console
+            logging.basicConfig(level=logging.DEBUG, format=format)
+        else:
+            logging.basicConfig(level=logging.INFO, format=format)
     return parser, opts, args

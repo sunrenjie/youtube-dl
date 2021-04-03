@@ -3,6 +3,7 @@ from __future__ import division, unicode_literals
 import os
 import time
 import json
+from youtube_dl.utility import batch_download
 
 from .common import FileDownloader
 from .http import HttpFD
@@ -53,6 +54,11 @@ class FragmentFD(FileDownloader):
     This feature is experimental and file format may change in future.
     """
 
+    def __init__(self, ydl, *args, **kwargs):
+        cache_dir = ydl.params.get('cachedir', None)
+        self.cache = batch_download.BatchFileDownloadCache(cache_dir) if cache_dir else None
+        super(FragmentFD, self).__init__(ydl, *args, **kwargs)
+
     def report_retry_fragment(self, err, frag_index, count, retries):
         self.to_screen(
             '[download] Got server HTTP error: %s. Retrying fragment %d (attempt %d of %s)...'
@@ -97,6 +103,12 @@ class FragmentFD(FileDownloader):
 
     def _download_fragment(self, ctx, frag_url, info_dict, headers=None):
         fragment_filename = '%s-Frag%d' % (ctx['tmpfilename'], ctx['fragment_index'])
+        if self.cache:
+            # Don't skip verification of checksum here to save a few CPU cycles.
+            # Large number of small files means higher inconsistency rate.
+            data = self.cache.cache_get(frag_url)
+            if data:
+                return True, data
         fragment_info_dict = {
             'url': frag_url,
             'http_headers': headers or info_dict.get('http_headers'),
@@ -110,6 +122,8 @@ class FragmentFD(FileDownloader):
         ctx['fragment_filename_sanitized'] = frag_sanitized
         frag_content = down.read()
         down.close()
+        if self.cache:
+            self.cache.cache_put(frag_url, frag_content)
         return True, frag_content
 
     def _append_fragment(self, ctx, frag_content):
@@ -119,9 +133,13 @@ class FragmentFD(FileDownloader):
         finally:
             if self.__do_ytdl_file(ctx):
                 self._write_ytdl_file(ctx)
+            fn = 'fragment_filename_sanitized'
+            v = ctx.get(fn, None)
+            if not v:  # fulfilled by cache?
+                return
             if not self.params.get('keep_fragments', False):
-                os.remove(encodeFilename(ctx['fragment_filename_sanitized']))
-            del ctx['fragment_filename_sanitized']
+                os.remove(encodeFilename(v))
+            del ctx[fn]
 
     def _prepare_frag_download(self, ctx):
         if 'live' not in ctx:

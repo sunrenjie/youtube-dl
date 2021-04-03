@@ -25,6 +25,7 @@ import time
 import tokenize
 import traceback
 import random
+import logging
 
 from string import ascii_letters
 
@@ -94,6 +95,8 @@ from .utils import (
     YoutubeDLHandler,
     YoutubeDLRedirectHandler,
 )
+from .utility import batch_download
+
 from .cache import Cache
 from .extractor import get_info_extractor, gen_extractor_classes, _LAZY_LOADER
 from .extractor.openload import PhantomJSwrapper
@@ -1949,6 +1952,29 @@ class YoutubeDL(object):
                             '[download] %s has already been downloaded and '
                             'merged' % filename)
                     else:
+                        cachedir = self.params.get('cachedir', None)
+                        jobs = []
+                        for f in requested_formats:
+                            base = f.get('fragment_base_url', None)
+                            if base is None:
+                                continue
+                            if not base.endswith('/'):
+                                base = base + '/'
+                            fs = f['fragments']
+                            headers = f.get('http_headers', None)
+                            if cachedir is not None:
+                                for frag in fs:
+                                    url = base + frag['path']
+                                    jobs.append((url, headers))
+                            for i in [0,1,2,-3,-2,-1]:
+                                try:
+                                    logging.info('track "%s": frag #%d is %s%s' % (
+                                        f['format_id'], i, base, fs[i]['path']))
+                                except Exception:
+                                    pass
+                        if cachedir is not None:
+                            assert(os.path.isdir(cachedir))
+                            batch_download.DownloadWorker.init_and_submit_direct_jobs(cachedir, jobs)
                         for f in requested_formats:
                             new_info = dict(info_dict)
                             new_info.update(f)
